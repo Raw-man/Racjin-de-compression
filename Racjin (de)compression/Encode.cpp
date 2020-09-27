@@ -111,7 +111,7 @@ std::vector<uint8_t> compress(const std::vector<uint8_t>& buffer) {
 
 			compressedBuffer.push_back(result & 0xFF);
 
-			if (s < groupSize - 1 || groupSize < 8) compressedBuffer.push_back(result >> 8);
+			if (s < groupSize - 1 || (groupSize<8 && s<groupSize)) compressedBuffer.push_back(result >> 8);
 
 
 		}
@@ -119,6 +119,8 @@ std::vector<uint8_t> compress(const std::vector<uint8_t>& buffer) {
 
 
 	}
+
+	/*if (compressedBuffer.end()[-2] == 0x00 && compressedBuffer.end()[-1] == 0x00) compressedBuffer.pop_back();*/
 
 
 	return compressedBuffer;

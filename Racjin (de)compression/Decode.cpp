@@ -20,10 +20,10 @@ std::vector<uint8_t> decompress(const std::vector<uint8_t>& buffer, uint32_t dec
 
 	while (index < buffer.size()) {
 
-		nextToken = buffer.at(index + 1); //rename to nextToken
+		nextToken = buffer.at(index + 1);
 		nextToken = nextToken << 8;
 		nextToken = nextToken | buffer.at(index);
-		nextToken = nextToken >> bitShift; //unfold 9 bit pair
+		nextToken = nextToken >> bitShift; //unfold 9 bit token
 
 		//The result can be interpreted as follows:
 		// iiiiiiif|ooooolll //f=0

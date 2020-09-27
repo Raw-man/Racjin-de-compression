@@ -44,7 +44,7 @@ int main()
 
 		do {
 			Header fileHeader;
-			file.read(reinterpret_cast<char*>(&fileHeader), 0x10); //reinterp cast
+			file.read(reinterpret_cast<char*>(&fileHeader), 0x10);
 			fileHeaders.push_back(fileHeader);
 		} while (fileHeaders.back().offset > 0);
 
@@ -89,12 +89,14 @@ int main()
 
 				if (fileHeader.isCompressed == 1) {
 					std::vector<uint8_t> decompressedBuffer = decompress(buffer, fileHeader.decompressedSize);
+					/*std::vector<uint8_t> compBuffer = compress(decompressedBuffer);*/
 					singleFile.write(reinterpret_cast<char*>(decompressedBuffer.data()), fileHeader.decompressedSize);
 				}
 				else {
 					singleFile.write(reinterpret_cast<char*>(buffer.data()), fileHeader.decompressedSize);
 				}
 				++fileCounter;
+
 				singleFile.close();
 			}
 			else {
@@ -105,14 +107,15 @@ int main()
 
 
 		file.close();
+
 		std::cout << "Total num of files: " << std::dec << fileCounter << "\n";
 	}
 	else {
 		std::cout << "Couldn't open CFC.DIG\n";
 	}
 
-
 	std::cout << "Press any key to exit...\n";
+
 	std::cin.get();
 
 	return 0;

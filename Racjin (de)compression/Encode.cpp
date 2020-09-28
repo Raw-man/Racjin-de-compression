@@ -1,27 +1,17 @@
-#include <iostream>
-#include <fstream>
-#include <filesystem>
 #include <cstdint>
-#include <string>
-#include <iomanip>
-#include <iostream>     // std::cout
-#include <sstream> 
 #include <vector>
-
-namespace fs = std::filesystem;
-
 
 std::vector<uint8_t> compress(const std::vector<uint8_t>& buffer) {
 
-	uint32_t index = 0; //position of an element from the input buffer
+	uint64_t index = 0; //position of an element from the input buffer
 
 	uint64_t lastEncByte = 0;//last encoded byte
 
-	uint8_t  bitShift = 0;
+	uint8_t  bitShift = 0; //shift by bitShift (used to fold tokens)
 
 	std::vector<uint32_t> frequencies(256, 0);
 
-	std::vector<uint32_t> seqIndices(8192, 0);
+	std::vector<uint64_t> seqIndices(8192, 0);
 
 	std::vector<uint16_t> tokens;
 
@@ -40,18 +30,19 @@ std::vector<uint8_t> compress(const std::vector<uint8_t>& buffer) {
 
 		uint8_t positionsToCheck = frequencies[lastEncByte] < 32 ? (frequencies[lastEncByte] & 0x1F) : 32;
 
-		uint32_t seqIndex = index;
+		uint64_t seqIndex = index;
 
 		for (uint8_t freq = 0; freq < positionsToCheck; freq++) {
 
 			uint64_t key = freq + lastEncByte * 32; //0x1F + 0xFF*32 = 8191
 
-			uint32_t srcIndex = seqIndices[key];
+			uint64_t srcIndex = seqIndices[key];
 
 			uint8_t matched = 0;
 
-			for (uint64_t offset = 0; offset < 8; ++offset) {
-				if (index + offset >= buffer.size()) break;
+			uint64_t maxLength = index + 8 < buffer.size() ? 8 : buffer.size() - index;
+
+			for (uint8_t offset = 0; offset < maxLength; ++offset) {
 				if (buffer[srcIndex + offset] == buffer[index + offset]) ++matched;
 				else break;
 			}
@@ -65,26 +56,23 @@ std::vector<uint8_t> compress(const std::vector<uint8_t>& buffer) {
 
 		uint16_t token = 0x00;
 
-		if (bestMatch > 0) { //record a pair
-			token = token | ((bestFreq << 3));//record frequency 
-			token = token | (bestMatch - 1); //record length
+		if (bestMatch > 0) { //found a better match?
+			token = token | (bestFreq << 3); //f|ooooolll //f=0 (flag), o - occurrence/frequency, l -length
+			token = token | (bestMatch - 1);   //encode a reference
 			index += bestMatch;
 		}
-		else {
-			token = 0x100 | buffer[seqIndex];
+		else { //encode byte literal
+			token = 0x100 | buffer[seqIndex]; //f|bbbbbbbb //f=1
 			++index;
 		}
 
-		token = token << bitShift;
+		token = token << bitShift; //prepare for folding
 
 		tokens.push_back(token);
 
-		++bitShift; //prepare for packing
+		++bitShift;
 
-		if (bitShift == 8) {
-			bitShift = 0;
-		};
-
+		if (bitShift == 8) bitShift = 0;
 
 		uint64_t key = (frequencies[lastEncByte] & 0x1F) + lastEncByte * 32; //0x1F + 0xFF*32 = 8191
 
@@ -96,7 +84,7 @@ std::vector<uint8_t> compress(const std::vector<uint8_t>& buffer) {
 
 	}
 
-	//Pack tokens
+	//Fold tokens (8 tokens, 16 bytes -> 8 tokens, 9 bytes)
 	for (uint64_t i = 0; i < tokens.size(); i = i + 8) {
 
 		uint64_t groupSize = i + 8 < tokens.size() ? 8 : tokens.size() - i;
@@ -111,7 +99,7 @@ std::vector<uint8_t> compress(const std::vector<uint8_t>& buffer) {
 
 			compressedBuffer.push_back(result & 0xFF);
 
-			if (s < groupSize - 1 || (groupSize<8 && s<groupSize)) compressedBuffer.push_back(result >> 8);
+			if (s < groupSize) compressedBuffer.push_back(result >> 8);
 
 
 		}
@@ -119,8 +107,6 @@ std::vector<uint8_t> compress(const std::vector<uint8_t>& buffer) {
 
 
 	}
-
-	/*if (compressedBuffer.end()[-2] == 0x00 && compressedBuffer.end()[-1] == 0x00) compressedBuffer.pop_back();*/
 
 
 	return compressedBuffer;

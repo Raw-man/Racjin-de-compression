@@ -69,6 +69,7 @@ int main()
 				file.clear();
 				continue;
 			}
+
 			std::vector<uint8_t> buffer(fileHeader.compressedSize, 0);
 
 			file.read(reinterpret_cast<char*>(buffer.data()), fileHeader.compressedSize);

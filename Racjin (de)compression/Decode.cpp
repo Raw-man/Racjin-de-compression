@@ -5,24 +5,21 @@
 std::vector<uint8_t> decompress(const std::vector<uint8_t>& buffer, uint32_t decompressedSize) { //LZSS based 
 
 	uint64_t index = 0; //position of a byte from the input buffer
-	uint64_t nextToken = 0; //next pair of bytes to decode from the input buffer
 	uint64_t lastDecByte = 0; //last decoded byte of the previus decoding iteration
-	uint32_t seqIndex = 0;//start of a byte sequence 
-	uint32_t srcIndex = 0;//position (source) of a byte from the output buffer
 	uint32_t destIndex = 0; //position (destination) of a decoded byte in the output buffer
 	uint8_t  bitShift = 0; //shift right by bitShift 
 
 	std::vector<uint8_t> frequencies(256, 0);
-	std::vector<uint32_t> seqIndices(8192, 0);//references to previously decoded sequences //sliding window 32768 bytes
+	std::vector<uint64_t> seqIndices(8192, 0);//references to previously decoded sequences //sliding window 32768 bytes
 	std::vector<uint8_t> decompressedBuffer(decompressedSize, 0);
 
 
 
 	while (index < buffer.size()) {
 
-		nextToken = buffer.at(index + 1);
+		uint64_t nextToken = buffer[index + 1];  //next pair of bytes to decode from the input buffer
 		nextToken = nextToken << 8;
-		nextToken = nextToken | buffer.at(index);
+		nextToken = nextToken | buffer[index];
 		nextToken = nextToken >> bitShift; //unfold 9 bit token
 
 		//The result can be interpreted as follows:
@@ -31,7 +28,7 @@ std::vector<uint8_t> decompress(const std::vector<uint8_t>& buffer, uint32_t dec
 		//i - ignore 
 		//f - flag  (is literal or offset/length pair)
 		//l - length (add 1 to get the real length)
-		//o - occurancies (add last decoded byte * 32)
+		//o - occurrences/frequency
 		//b - byte literal
 
 		++bitShift;
@@ -43,11 +40,11 @@ std::vector<uint8_t> decompress(const std::vector<uint8_t>& buffer, uint32_t dec
 		}
 
 
-		seqIndex = destIndex;
+		uint64_t seqIndex = destIndex; //start of a byte sequence 
 
-		if ((nextToken & 0x100) != 0) {// bit flag: is nextByte a literal or a reference?
+		if ((nextToken & 0x100) != 0) {// bit flag: is nextToken a literal or a reference?
 
-			decompressedBuffer.at(destIndex) = nextToken & 0xFF;//store the literal
+			decompressedBuffer[destIndex] = nextToken & 0xFF;//store the literal
 			++destIndex;
 
 		}
@@ -55,13 +52,11 @@ std::vector<uint8_t> decompress(const std::vector<uint8_t>& buffer, uint32_t dec
 
 			uint64_t key = ((nextToken >> 3) & 0x1F) + lastDecByte * 32; //0x1F + 0xFF*32 = 8191
 
-			srcIndex = seqIndices[key]; //get a reference to a previously decoded sequence
+			uint64_t srcIndex = seqIndices[key]; //get a reference to a previously decoded sequence
 
+			for (uint8_t length = 0; length < (nextToken & 0x07) + 1; ++length, ++destIndex, ++srcIndex) {
 
-			//last 3 bits is length 
-			for (uint32_t length = 0; length < (nextToken & 0x07) + 1; ++length, ++destIndex, ++srcIndex) {
-
-				decompressedBuffer.at(destIndex) = decompressedBuffer.at(srcIndex); //copy a previously decoded byte sequence (up to 8)
+				decompressedBuffer[destIndex] = decompressedBuffer[srcIndex]; //copy a previously decoded byte sequence (up to 8)
 
 			}
 
@@ -76,7 +71,7 @@ std::vector<uint8_t> decompress(const std::vector<uint8_t>& buffer, uint32_t dec
 
 		frequencies[lastDecByte] = (frequencies[lastDecByte] + 1) & 0x1F; //increase by 1 (up to 31)
 
-		lastDecByte = decompressedBuffer.at(destIndex - 1);
+		lastDecByte = decompressedBuffer[destIndex - 1];
 
 	}
 

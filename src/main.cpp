@@ -107,8 +107,6 @@ int main(int argc, char** argv)
     std::vector<std::string> arguments;
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32) && !defined(__CYGWIN__)
-    arguments.resize(0);
-    // auto cmd_string = GetCommandLineA();
     int n_args = 0;
     auto cmd_args = CommandLineToArgvW(GetCommandLineW(), &n_args);
     for(int i = 0; i < n_args; i++)
@@ -220,8 +218,6 @@ int main(int argc, char** argv)
                 file_record.cfc.compressed_size = SwapEndian(file_record.cfc.compressed_size);
             }
 
-            file_record.cfc.offset *= kSectorSize;
-
         }
         else
         {
@@ -232,11 +228,6 @@ int main(int argc, char** argv)
                 file_record.cddata.section_count = SwapEndian(file_record.cddata.section_count);
                 file_record.cddata.compressed_size = SwapEndian(file_record.cddata.compressed_size);
             }
-
-
-            file_record.cddata.offset *= kSectorSize;
-            file_record.cddata.decompressed_size *= kSectorSize;
-            file_record.cddata.compressed_size *= kSectorSize;
         }
 
         file_records.push_back(file_record);
@@ -259,7 +250,7 @@ int main(int argc, char** argv)
 
         if(is_cfc)
         {
-            offset = file_record.cfc.offset;
+            offset = file_record.cfc.offset * kSectorSize;
             compressed_size  = file_record.cfc.compressed_size ;
             decompressed_size = file_record.cfc.decompressed_size;
             section_count = file_record.cfc.section_count;
@@ -268,9 +259,9 @@ int main(int argc, char** argv)
         }
         else
         {
-            offset = file_record.cddata.offset;
-            compressed_size  = file_record.cddata.compressed_size > 0 ? file_record.cddata.compressed_size : file_record.cddata.decompressed_size ;
-            decompressed_size = file_record.cddata.decompressed_size;
+            offset = file_record.cddata.offset * kSectorSize;
+            compressed_size  = file_record.cddata.compressed_size > 0 ? file_record.cddata.compressed_size * kSectorSize : file_record.cddata.decompressed_size * kSectorSize;
+            decompressed_size = file_record.cddata.decompressed_size * kSectorSize;
             section_count = file_record.cddata.section_count;
             is_compressed = file_record.cddata.compressed_size > 0;
         }

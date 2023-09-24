@@ -1,5 +1,6 @@
 #include <cstdint>
 #include <vector>
+#include "racjin/racjin.hpp"
 
 std::vector<uint8_t> Compress(const std::vector<uint8_t>& buffer)    //LZSS based
 {

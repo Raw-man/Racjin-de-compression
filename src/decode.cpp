@@ -1,5 +1,6 @@
 #include <cstdint>
 #include <vector>
+#include "racjin/racjin.hpp"
 
 std::vector<uint8_t> Decompress(const std::vector<uint8_t>& buffer, uint32_t decompressed_size)
 {

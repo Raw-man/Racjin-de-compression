@@ -9,12 +9,23 @@ In this repository you can find code for _compression_ and _decompression_ algor
 
 Main contents of those games can be found in **CFC.DIG** or **CDDATA.DIG** files. [Here is the tool](https://github.com/Raw-man/Racjin-de-compression/releases/) for unpacking them. 
 
-**Note**: 
+**Usage**:
+
+Drop the file onto the executable or run the program from the command line.
+
+>file_path <record_section_end_hex_offset\> <is_cfc.dig\> <is_big_endian\>
+>
+>>racjin-decompression /path/to/archive/
+>
+>>racjin-decompression /path/to/archive 0x500 1 0
+
+**Note**:
+>
 >In Naruto Shippuden: Ultimate Ninja Impact CFC.DIG files are encrypted and stored in PGD files so you need to decrypt them first;
-
+>
 >CFC.DIG and CDDATA.DIG files are structured differently.
-
+>
 >Their endianness differs depending on the platform.
-
+>
 >Sometimes it might be difficult to determine the number of file records they contain. You should inspect the archives and possibly provide extra arguments to the program.
 

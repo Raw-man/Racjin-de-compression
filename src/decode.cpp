@@ -5,16 +5,14 @@
 std::vector<uint8_t> Decompress(const std::vector<uint8_t>& buffer, uint32_t decompressed_size)
 {
 
-	uint32_t index = 0; //position of a byte from the input buffer
+    uint32_t index = 0; //position of a byte from the input buffer
     uint32_t dest_index = 0; //position (destination) of a decoded byte in the output buffer
     uint8_t last_dec_byte = 0; //last decoded byte of the previus decoding iteration
     uint8_t  bit_shift = 0; //shift right by bitShift
 
-	std::vector<uint8_t> frequencies(256, 0);
+    std::vector<uint8_t> frequencies(256, 0);
     std::vector<uint32_t> seq_indices(8192, 0);//references to previously decoded sequences //sliding window 32768 bytes; 2d array
     std::vector<uint8_t> decompressed_buffer(decompressed_size, 0);
-
-
 
     while(index < buffer.size())
     {
@@ -24,23 +22,23 @@ std::vector<uint8_t> Decompress(const std::vector<uint8_t>& buffer, uint32_t dec
         next_code = next_code | buffer[index];
         next_code = next_code >> bit_shift; //unfold 9 bit token
 
-		//The result can be interpreted as follows:
-		// iiiiiiif|ooooolll //f=0
-		// iiiiiiif|bbbbbbbb //f=1
+        //The result can be interpreted as follows:
+        // iiiiiiif|ooooolll //f=0
+        // iiiiiiif|bbbbbbbb //f=1
         //i - ignore
-		//f - flag  (is literal or offset/length pair)
-		//l - length (add 1 to get the real length)
-		//o - occurrences/frequency
-		//b - byte literal
+        //f - flag  (is literal or offset/length pair)
+        //l - length (add 1 to get the real length)
+        //o - occurrences/frequency
+        //b - byte literal
 
         ++bit_shift;
-		++index;
+        ++index;
 
         if(bit_shift == 8)
         {
             bit_shift = 0;
-			++index;
-		}
+            ++index;
+        }
 
 
         uint32_t seq_index = dest_index; //start of a byte sequence
@@ -51,7 +49,7 @@ std::vector<uint8_t> Decompress(const std::vector<uint8_t>& buffer, uint32_t dec
             decompressed_buffer[dest_index] = next_code & 0xFF;//store the literal
             ++dest_index;
 
-		}
+        }
         else
         {
 
@@ -64,10 +62,10 @@ std::vector<uint8_t> Decompress(const std::vector<uint8_t>& buffer, uint32_t dec
 
                 decompressed_buffer[dest_index] = decompressed_buffer[src_index]; //copy a previously decoded byte sequence (up to 8)
 
-			}
+            }
 
 
-		}
+        }
 
         if(dest_index >= decompressed_buffer.size()) break;
 
@@ -79,7 +77,7 @@ std::vector<uint8_t> Decompress(const std::vector<uint8_t>& buffer, uint32_t dec
 
         last_dec_byte = decompressed_buffer[dest_index - 1];
 
-	}
+    }
 
     return decompressed_buffer;
 }

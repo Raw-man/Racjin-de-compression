@@ -5,13 +5,13 @@
 std::vector<uint8_t> Compress(const std::vector<uint8_t>& buffer)    //LZSS based
 {
 
-	uint32_t index = 0; //position of an element from the input buffer
+    uint32_t index = 0; //position of an element from the input buffer
 
     uint8_t last_enc_byte = 0;//last encoded byte
 
     uint8_t  bit_shift = 0; //shift by bitShift (used to fold codes)
 
-	std::vector<uint32_t> frequencies(256, 0);
+    std::vector<uint32_t> frequencies(256, 0);
 
     std::vector<uint32_t> seq_indices(8192, 0);
 
@@ -45,23 +45,23 @@ std::vector<uint8_t> Compress(const std::vector<uint8_t>& buffer)    //LZSS base
 
             uint32_t src_index = seq_indices[key];
 
-			uint8_t matched = 0;
+            uint8_t matched = 0;
 
             uint8_t max_length = index + 8 < buffer.size() ? 8 : buffer.size() - index;
 
             for(uint8_t offset = 0; offset < max_length; ++offset)
             {
                 if(buffer[src_index + offset] == buffer[index + offset]) ++matched;
-				else break;
-			}
+                else break;
+            }
 
             if(matched > best_match)
             {
                 best_freq = freq;
                 best_match = matched;
-			}
+            }
 
-		}
+        }
 
         uint16_t code = 0x00;
 
@@ -70,12 +70,12 @@ std::vector<uint8_t> Compress(const std::vector<uint8_t>& buffer)    //LZSS base
             code = code | (best_freq << 3); //f|ooooolll //f=0 (flag), o - occurrences/frequency, l -length
             code = code | (best_match - 1);   //encode a reference
             index += best_match;
-		}
+        }
         else   //encode byte literal
         {
             code = 0x100 | buffer[index]; //f|bbbbbbbb //f=1
-			++index;
-		}
+            ++index;
+        }
 
         code = code << bit_shift; //prepare for folding
 
@@ -93,7 +93,7 @@ std::vector<uint8_t> Compress(const std::vector<uint8_t>& buffer)    //LZSS base
 
         last_enc_byte = buffer[index - 1];
 
-	}
+    }
 
     //Fold codes (8 codes, 16 bytes -> 8 codes, 9 bytes)
     for(uint32_t i = 0; i < codes.size(); i = i + 8)
@@ -108,18 +108,18 @@ std::vector<uint8_t> Compress(const std::vector<uint8_t>& buffer)    //LZSS base
             uint16_t middle = s < group_size ? codes[s + i] : 0x00;
             uint16_t last = s < group_size - 1 ? codes[s + i + 1] : 0x00;
 
-			uint16_t result = middle | (first >> 8) | (last << 8);
+            uint16_t result = middle | (first >> 8) | (last << 8);
 
             compressed_buffer.push_back(result & 0xFF);
 
             if(s < group_size) compressed_buffer.push_back(result >> 8);
 
 
-		}
+        }
 
 
 
-	}
+    }
 
 
     return compressed_buffer;

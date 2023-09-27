@@ -9,6 +9,8 @@
 #include <vector>
 #include <cstring>
 #include <climits>
+#include <variant>
+#include <map>
 #include "racjin/racjin.hpp"
 
 namespace fs = std::filesystem;
@@ -50,6 +52,16 @@ std::string WstrToUtf8Str(const std::wstring& wstr)
 }
 #endif
 
+
+#ifdef __GNUC__
+#define RCJN_PACK( __Declaration__ ) __Declaration__ __attribute__((__packed__))
+#endif
+
+#ifdef _MSC_VER
+#define RCJN_PACK( __Declaration__ ) __pragma( pack(push, 1) ) __Declaration__ __pragma( pack(pop))
+#endif
+
+
 template <typename T>
 T SwapEndian(T u)
 {
@@ -69,34 +81,51 @@ T SwapEndian(T u)
     return dest.u;
 }
 
-struct FileRecord
+//CFC.DIG (or in some cases CDDATA.DIG) archives (since 2005)
+RCJN_PACK(struct FileRecordCFC
 {
-    union
-    {
-        struct
-        {
-            uint32_t offset;
-            uint32_t compressed_size;
-            uint16_t section_count;
-            uint16_t is_compressed;
-            uint32_t decompressed_size;
-        } cfc;
+    uint32_t offset; //in disc sectors
+    uint32_t compressed_size;//in bytes
+    uint16_t section_count; //number of sections in decompressed files
+    uint16_t is_compressed;
+    uint32_t decompressed_size;//in bytes
+});
 
-        struct
-        {
-            uint32_t offset;
-            uint32_t decompressed_size;
-            uint32_t section_count;
-            uint32_t compressed_size;//set to 0 if the file is not compressed
-        } cddata;
+//CDDATA.DIG archives (since 2004)
+RCJN_PACK(struct FileRecordCDData //bomberman kart dx (ps2), bomberman land portable (psp)
+{
+    uint32_t offset; //in disc sectors
+    uint32_t decompressed_size;//in disc sectors
+    uint32_t section_count;
+    uint32_t compressed_size;//in disc sectors, set to 0 if the file is not compressed
+});
 
-    };
-};
+//CDDATA.DIG archives (before 2004)
+RCJN_PACK(struct FileRecordCDDataOld //bomberman land 2, bomberman kart
+{
+    uint32_t offset;//in disc sectors
+    uint32_t size; //in disc sectors, no compressed files
+    uint32_t section_count;
+});
 
-static_assert(sizeof(FileRecord) == 0x10, "sizeof(FileRecord) is not 0x10!");
+static_assert(sizeof(FileRecordCFC) == 0x10, "sizeof(FileRecordCFC) is not 0x10!");
+static_assert(sizeof(FileRecordCDData) == 0x10, "sizeof(FileRecordCDData) is not 0x10!");
+static_assert(sizeof(FileRecordCDDataOld) == 0xC, "sizeof(FileRecordCDDataOld) is not 0xC!");
 
-bool is_cfc = false; //if cfc.dig or cddata.dig
-bool is_big_endian = false; //for wii titles
+enum class ArchiveType { kCFC, kCDData, kCDDataOld };
+
+const std::map<ArchiveType, std::string> archive_type_strings
+{
+    { ArchiveType::kCFC, "cfc.dig (in some cases cddata.dig, ~since 2005)" },
+    { ArchiveType::kCDData, "cddata.dig (newer variation, with compressed files, since ~2004)" },
+    { ArchiveType::kCDDataOld, "cddata.dig (older variation, without compressed files, before ~2004)" }};
+
+using FileRecord = std::variant<FileRecordCFC, FileRecordCDData, FileRecordCDDataOld>;
+
+
+ArchiveType archive_type = ArchiveType::kCFC;
+
+bool is_big_endian = false; //for wii, gamecube titles
 
 const unsigned int kSectorSize = 0x800; //the size of a disc sector
 
@@ -128,13 +157,14 @@ int main(int argc, char** argv)
 
     if(argc > 1)
     {
-        p = std::filesystem::u8path(arguments.at(1));
+        p = std::filesystem::u8path(arguments[1]);
         p = std::filesystem::absolute(p);
     }
 
     if(p.empty() || !std::filesystem::is_regular_file(p) || !std::filesystem::exists(p))
     {
-        std::cout << "error: the path to a cfc.dig or cddata.dig file is invalid! Specify the path and other optional arguments manually or drop the file onto the executable;\n\nfile_path <record_section_end_hex_offset> <is_cfc.dig> <is_big_endian>\n\n";
+        std::cout << "error: the path to a cfc.dig or cddata.dig file is invalid! Specify the path and other optional arguments manually or drop the file onto the executable;\n\n"
+                  << "file_path <record_section_start_hex_offset> <record_section_end_hex_offset> <archive_type> <is_big_endian>\n\n";
         std::cout << p.u8string() << std::endl;
         std::cin.get();
         return 1;
@@ -155,25 +185,34 @@ int main(int argc, char** argv)
 
     std::cout << "the file was opened: " << p.u8string() << "\n" << std::endl;
 
-
+    //attempt to determine the type of the archive
     {
-        FileRecord file_record, empty_record;
-        container.read(reinterpret_cast<char*>(&file_record), sizeof(FileRecord));
+        FileRecordCFC file_record, empty_record;
+        container.read(reinterpret_cast<char*>(&file_record), sizeof(FileRecordCFC));
 
-        //in cfc.dig files the first 0x10 bytes are usually 0
-        std::memset(&empty_record, 0, sizeof(FileRecord));
-
-        is_cfc = std::memcmp(&file_record, &empty_record, sizeof(FileRecord)) == 0;
-
-        if(file_record.cfc.offset == kMagicBytesPGD)
+        if(file_record.offset == kMagicBytesPGD)
         {
             std::cout << "error: the file is encrypted (PGD)" << std::endl;
             std::cin.get();
             return 1;
         }
+
+        //in cfc.dig files, the first 0x10 bytes are usually 0 (not the case in Fullmetal Alchemist and the Broken Angel, which has cddata.dig files that are structured like cfc.dig files)
+        std::memset(&empty_record, 0, sizeof(FileRecordCFC));
+
+        if(std::memcmp(&file_record, &empty_record, sizeof(FileRecordCFC)) == 0)
+        {
+            archive_type = ArchiveType::kCFC;
+        }
+        else
+        {
+            archive_type = ArchiveType::kCDData;
+        }
+
+
     }
 
-    uint32_t record_section_start = is_cfc ? 0x10 : 0;
+    uint32_t record_section_start = archive_type == ArchiveType::kCFC ? 0x10 : 0;
     uint32_t record_section_end;
 
     //note: in some cases it's difficult to determine the exact size of the section that contains file records and their type
@@ -190,47 +229,52 @@ int main(int argc, char** argv)
 
     //extra arguments: records section end, is_cfc, is_big_endian
 
-    if(arguments.size() > 2) record_section_end = std::stoul(arguments.at(2), 0, 0x10);
-    if(arguments.size() > 3) is_cfc = (bool)std::stoul(arguments.at(3));
-    if(arguments.size() > 4) is_big_endian = (bool)std::stoul(arguments.at(4));
+    if(arguments.size() > 2) record_section_start = std::stoul(arguments[2], 0, 0x10);
+    if(arguments.size() > 3) record_section_end = std::stoul(arguments[3], 0, 0x10);
+    if(arguments.size() > 4) archive_type = static_cast<ArchiveType>(std::min(std::stoul(arguments[4]), 2ul));
+    if(arguments.size() > 5) is_big_endian = (bool)std::stoul(arguments[5]);
 
-    std::cout << "archive type: " << (is_cfc ? "cfc.dig" : "cddata.dig") << "\n";
+    std::cout << "archive type: " <<  archive_type_strings.at(archive_type) << "\n";
+    std::cout << "record section start: 0x" << std::hex << record_section_start << "\n";
     std::cout << "record section end: 0x" << std::hex << record_section_end << "\n";
-    std::cout << "endianness: " << (is_big_endian ? "big_endian" : "little_endian") << "\n" << std::endl;
+    std::cout << "endianness: " << (is_big_endian ? "big_endian (wii/gamecube)" : "little_endian (ps2/psp)") << "\n" << std::endl;
 
     container.seekg(record_section_start);
+
 
     std::vector<FileRecord> file_records;
 
     while(container.tellg() < record_section_end)
     {
-        FileRecord file_record;
-        container.read(reinterpret_cast<char*>(&file_record), sizeof(FileRecord));
 
-        if(is_cfc)
+        switch(archive_type)
         {
-            if(is_big_endian)
+            case ArchiveType::kCFC:
             {
-                file_record.cfc.offset = SwapEndian(file_record.cfc.offset);
-                file_record.cfc.decompressed_size = SwapEndian(file_record.cfc.decompressed_size);
-                file_record.cfc.section_count = SwapEndian(file_record.cfc.section_count);
-                file_record.cfc.is_compressed = SwapEndian(file_record.cfc.is_compressed);
-                file_record.cfc.compressed_size = SwapEndian(file_record.cfc.compressed_size);
+                FileRecordCFC file_record;
+                container.read(reinterpret_cast<char*>(&file_record), sizeof(FileRecordCFC));
+                file_records.push_back(file_record);
+
+            }
+            break;
+            case ArchiveType::kCDData:
+            {
+                FileRecordCDData file_record;
+                container.read(reinterpret_cast<char*>(&file_record), sizeof(FileRecordCDData));
+                file_records.push_back(file_record);
+            }
+
+            break;
+
+            case ArchiveType::kCDDataOld:
+            {
+                FileRecordCDDataOld file_record;
+                container.read(reinterpret_cast<char*>(&file_record), sizeof(FileRecordCDDataOld));
+                file_records.push_back(file_record);
             }
 
         }
-        else
-        {
-            if(is_big_endian)
-            {
-                file_record.cddata.offset = SwapEndian(file_record.cddata.offset);
-                file_record.cddata.decompressed_size = SwapEndian(file_record.cddata.decompressed_size);
-                file_record.cddata.section_count = SwapEndian(file_record.cddata.section_count);
-                file_record.cddata.compressed_size = SwapEndian(file_record.cddata.compressed_size);
-            }
-        }
 
-        file_records.push_back(file_record);
     }
 
 
@@ -248,25 +292,76 @@ int main(int argc, char** argv)
         uint32_t section_count = 0;
         uint32_t is_compressed = 0;
 
-        if(is_cfc)
+        switch(archive_type)
         {
-            offset = file_record.cfc.offset * kSectorSize;
-            compressed_size  = file_record.cfc.compressed_size ;
-            decompressed_size = file_record.cfc.decompressed_size;
-            section_count = file_record.cfc.section_count;
-            is_compressed = file_record.cfc.is_compressed;
+            case ArchiveType::kCFC:
+            {
+                auto file_record_cfc = std::get<FileRecordCFC>(file_record);
+                offset = file_record_cfc.offset;
+                compressed_size  = file_record_cfc.compressed_size ;
+                decompressed_size = file_record_cfc.decompressed_size;
+                section_count = file_record_cfc.section_count;
+                is_compressed = file_record_cfc.is_compressed;
 
+                if(is_big_endian) //unlikely to be the case
+                {
+                    offset = SwapEndian(offset);
+                    compressed_size  =  SwapEndian(compressed_size) ;
+                    decompressed_size = SwapEndian(decompressed_size);
+                    section_count = SwapEndian(section_count);
+                    is_compressed = SwapEndian(is_compressed);
+                }
+
+                offset *= kSectorSize;
+            }
+            break;
+            case ArchiveType::kCDData:
+            {
+                auto file_record_cddata = std::get<FileRecordCDData>(file_record);
+                offset = file_record_cddata.offset;
+                compressed_size  = file_record_cddata.compressed_size > 0 ? file_record_cddata.compressed_size : file_record_cddata.decompressed_size ;
+                decompressed_size = file_record_cddata.decompressed_size;
+                section_count = file_record_cddata.section_count;
+                is_compressed = file_record_cddata.compressed_size > 0;
+
+                if(is_big_endian)
+                {
+                    offset = SwapEndian(offset);
+                    compressed_size  =  SwapEndian(compressed_size) ;
+                    decompressed_size = SwapEndian(decompressed_size);
+                    section_count = SwapEndian(section_count);
+                }
+
+                offset *= kSectorSize;
+                compressed_size *= kSectorSize;
+                decompressed_size *= kSectorSize;
+            }
+            break;
+
+
+            case ArchiveType::kCDDataOld:
+            {
+                auto file_record_cddata = std::get<FileRecordCDDataOld>(file_record);
+                offset = file_record_cddata.offset;
+                compressed_size  = file_record_cddata.size;
+                decompressed_size = file_record_cddata.size;
+                section_count = file_record_cddata.section_count;
+                is_compressed = false;
+
+                if(is_big_endian)
+                {
+                    offset = SwapEndian(offset);
+                    compressed_size  =  SwapEndian(compressed_size) ;
+                    decompressed_size = SwapEndian(decompressed_size);
+                    section_count = SwapEndian(section_count);
+                }
+
+                offset *= kSectorSize;
+                compressed_size *= kSectorSize;
+                decompressed_size *= kSectorSize;
+            }
+            break;
         }
-        else
-        {
-            offset = file_record.cddata.offset * kSectorSize;
-            compressed_size  = file_record.cddata.compressed_size > 0 ? file_record.cddata.compressed_size * kSectorSize : file_record.cddata.decompressed_size * kSectorSize;
-            decompressed_size = file_record.cddata.decompressed_size * kSectorSize;
-            section_count = file_record.cddata.section_count;
-            is_compressed = file_record.cddata.compressed_size > 0;
-        }
-
-
 
         std::cout << "file record: " << std::hex << i << "\n";
 
@@ -284,13 +379,19 @@ int main(int argc, char** argv)
 
         if(compressed_size > decompressed_size)
         {
-            std::cout << "error: the compressed size > decompressed size (not a file record?)\n" << std::endl;
+            std::cout << "error: the compressed size > decompressed size (not a file record, wrong type?)\n" << std::endl;
             break;
         }
 
         if(is_compressed > 1)
         {
-            std::cout << "error: the compressed flag is > 1 (not a file record?)" << std::endl;
+            std::cout << "error: the compressed flag is > 1 (not a file record, wrong type?)" << std::endl;
+            break;
+        }
+
+        if(section_count > 0x3FF)
+        {
+            std::cout << "error: the section count is too large (not a file record, wrong type?)" << std::endl;
             break;
         }
 
@@ -328,7 +429,7 @@ int main(int argc, char** argv)
         {
             std::vector<uint8_t> decompressed_buffer = Decompress(buffer, decompressed_size);
 
-            // std::vector<uint8_t> compressed_buffer = Compress(decompressed_buffer); //note: see encode.cpp to get the same compression for cddata.dig files
+            //std::vector<uint8_t> compressed_buffer = Compress(decompressed_buffer); //note: see encode.cpp to get the same compression for cddata.dig files
 
             single_file.write(reinterpret_cast<char*>(decompressed_buffer.data()), decompressed_buffer.size());
 
@@ -349,7 +450,6 @@ int main(int argc, char** argv)
     container.close();
 
     std::cout << "the total number of extracted files: " << std::dec << file_counter << "\n";
-
 
     std::cout << "press any key to exit...\n";
 

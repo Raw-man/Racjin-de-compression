@@ -13,8 +13,6 @@
 #include <map>
 #include "racjin/racjin.hpp"
 
-namespace fs = std::filesystem;
-
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32) && !defined(__CYGWIN__)
 #include <windows.h>
@@ -153,7 +151,7 @@ int main(int argc, char** argv)
     }
 #endif
 
-    fs::path p;
+    std::filesystem::path p;
 
     if(argc > 1)
     {
@@ -171,8 +169,8 @@ int main(int argc, char** argv)
     }
 
 
-    fs::create_directories(p.parent_path() / std::filesystem::u8path("unpacked/0"));
-    fs::create_directories(p.parent_path() /  std::filesystem::u8path("unpacked/1"));
+    std::filesystem::create_directories(p.parent_path() / std::filesystem::u8path("unpacked/0"));
+    std::filesystem::create_directories(p.parent_path() /  std::filesystem::u8path("unpacked/1"));
 
     std::ifstream container(p, std::ios::binary); //cfc.dig or cddata.dig
 
@@ -241,10 +239,16 @@ int main(int argc, char** argv)
 
     container.seekg(record_section_start);
 
+    if(record_section_end >= std::filesystem::file_size(p))
+    {
+        std::cout << "error: record section end is too large" << std::endl;
+        std::cin.get();
+        return 1;
+    }
 
     std::vector<FileRecord> file_records;
 
-    while(container.tellg() < record_section_end)
+    while(container.tellg() < record_section_end && !container.eof())
     {
 
         switch(archive_type)
@@ -389,7 +393,7 @@ int main(int argc, char** argv)
             break;
         }
 
-        if(section_count > 0x3FF)
+        if(section_count > 0x4FF)
         {
             std::cout << "error: the section count is too large (not a file record, wrong type?)" << std::endl;
             break;
